@@ -53,6 +53,13 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Check for API Key on mount
+  React.useEffect(() => {
+    if (!process.env.GEMINI_API_KEY) {
+      console.error("GEMINI_API_KEY is missing in environment variables.");
+    }
+  }, []);
+
   // Load History on Mount
   React.useEffect(() => {
     const loadData = async () => {

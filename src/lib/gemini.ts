@@ -1,6 +1,12 @@
 import { GoogleGenAI, Type, ThinkingLevel, HarmCategory, HarmBlockThreshold } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const getAI = () => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is missing. Please set it in your environment variables.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 export interface Question {
   id: string;
@@ -45,7 +51,7 @@ export async function processPDF(file: File, subjects: string[]): Promise<Questi
     `;
 
     try {
-      const response = await ai.models.generateContent({
+      const response = await getAI().models.generateContent({
         model: "gemini-3-flash-preview",
         contents: [
           {
