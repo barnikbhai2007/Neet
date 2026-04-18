@@ -22,12 +22,23 @@ import {
   History,
   Trash2,
   Calendar,
-  Layers
+  Layers,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { processPDF, Question } from './lib/gemini';
 import { cn } from './lib/utils';
 import { saveExam, getExamHistory, getExamQuestions, deleteExam, SavedExam } from './lib/storage';
+import { 
+  auth, 
+  googleProvider, 
+  saveExamToCloud, 
+  getCloudExams, 
+  deleteCloudExam, 
+  syncUserToFirestore,
+  RemoteExam
+} from './lib/firebase';
+import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -38,6 +49,10 @@ type ViewState = 'landing' | 'processing' | 'ready' | 'exam' | 'results' | 'libr
 export default function App() {
   const [view, setView] = useState<ViewState>('landing');
   const [history, setHistory] = useState<SavedExam[]>([]);
+  const [cloudHistory, setCloudHistory] = useState<RemoteExam[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importText, setImportText] = useState('');
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(['Botany']);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -60,14 +75,67 @@ export default function App() {
     }
   }, []);
 
-  // Load History on Mount
+  // User & History Effect
   React.useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (u) {
+        await syncUserToFirestore(u);
+        const cloud = await getCloudExams(u.uid);
+        setCloudHistory(cloud);
+      }
+    });
+
     const loadData = async () => {
       const saved = await getExamHistory();
       setHistory(saved);
     };
+    
     loadData();
+    return () => unsubscribe();
   }, []);
+
+  const login = async () => {
+    try {
+      const res = await signInWithPopup(auth, googleProvider);
+      if (res.user) {
+        const cloud = await getCloudExams(res.user.uid);
+        setCloudHistory(cloud);
+      }
+    } catch (e) {
+      console.error(e);
+      setError("Login failed.");
+    }
+  };
+
+  const logout = () => signOut(auth);
+
+  const handleManualImport = () => {
+    try {
+      const qs = JSON.parse(importText);
+      if (!Array.isArray(qs)) throw new Error("JSON must be an array");
+      
+      const validated = qs.map((q, idx) => ({
+        ...q,
+        id: q.id || `q-import-${idx}`,
+        subject: q.subject || 'Imported',
+        correctAnswer: Number(q.correctAnswer),
+        options: q.options || [],
+        text: q.text || 'Missing text',
+        explanation: q.explanation || 'No explanation provided',
+        hasDiagram: q.hasDiagram || false,
+        pageNumber: q.pageNumber || 1,
+        originalQuestionNumber: q.originalQuestionNumber || idx + 1
+      }));
+
+      setQuestions(validated);
+      setView('ready');
+      setIsImportModalOpen(false);
+      setImportText('');
+    } catch (e) {
+      setError("Invalid JSON format. Ensure it follows the NEET Scan question schema.");
+    }
+  };
 
   const subjects = [
     { name: 'Botany', icon: BrainCircuit },
@@ -147,9 +215,17 @@ export default function App() {
       setLoading(false);
       setBytesScanned(file.size);
       
-      // Auto-save to library
+      // Save to library
       const examName = file.name.replace(/\.[^/.]+$/, "");
       await saveExam(examName, selectedSubjects, extractedQuestions);
+      
+      // Save to cloud if logged in
+      if (user) {
+        await saveExamToCloud(user.uid, examName, selectedSubjects, extractedQuestions);
+        const cloud = await getCloudExams(user.uid);
+        setCloudHistory(cloud);
+      }
+
       const updatedHistory = await getExamHistory();
       setHistory(updatedHistory);
       
@@ -292,7 +368,31 @@ export default function App() {
         </div>
         
         <div className="flex items-center gap-4">
-          {view === 'landing' && history.length > 0 && (
+          {user ? (
+            <div className="flex items-center gap-3">
+              <div className="hidden md:flex flex-col items-end leading-none">
+                <span className="text-[10px] font-black uppercase text-text-muted">Account</span>
+                <span className="text-xs font-bold truncate max-w-[100px]">{user.displayName || user.email}</span>
+              </div>
+              <button onClick={logout} className="w-8 h-8 rounded-full overflow-hidden border border-border hover:border-primary transition-colors">
+                <img src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} referrerPolicy="no-referrer" alt="Avatar" />
+              </button>
+            </div>
+          ) : (
+            <button onClick={login} className="btn btn-primary text-[10px] md:text-sm px-3 md:px-5">Login</button>
+          )}
+
+          {view === 'landing' && (
+            <button 
+              onClick={() => setIsImportModalOpen(true)}
+              className="btn flex items-center gap-2 text-xs md:text-sm border-border hover:border-primary/50"
+            >
+              <RefreshCw className="w-4 h-4 text-primary" />
+              <span className="hidden sm:inline">Manual Import</span>
+            </button>
+          )}
+
+          {view === 'landing' && (history.length > 0 || cloudHistory.length > 0) && (
             <button 
               onClick={() => setView('library')}
               className="btn flex items-center gap-2 text-xs md:text-sm border-border hover:border-primary/50"
@@ -455,6 +555,50 @@ export default function App() {
                </div>
 
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                 {/* Cloud Exams Section */}
+                 {cloudHistory.length > 0 && (
+                    <div className="col-span-full space-y-4 mb-8">
+                       <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary">
+                         <LayoutDashboard className="w-4 h-4" /> Cloud Sync Vault
+                       </div>
+                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {cloudHistory.map(item => (
+                            <div key={item.id} className="bg-primary/5 border border-primary/20 p-6 rounded-3xl flex flex-col justify-between hover:bg-primary/10 transition-colors group">
+                               <div className="space-y-4">
+                                  <div className="flex items-start justify-between">
+                                     <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center text-primary">
+                                       <Activity className="w-6 h-6" />
+                                     </div>
+                                     <button 
+                                       onClick={() => deleteCloudExam(user!.uid, item.id).then(() => getCloudExams(user!.uid).then(setCloudHistory))} 
+                                       className="p-2 text-text-muted hover:text-red-500 transition-colors"
+                                     >
+                                       <Trash2 className="w-4 h-4" />
+                                     </button>
+                                  </div>
+                                  <div>
+                                     <h4 className="font-bold text-lg line-clamp-1">{item.name}</h4>
+                                     <p className="text-[10px] uppercase font-black tracking-widest text-text-muted opacity-60">
+                                       {item.questionCount} Questions • Cloud Sync
+                                     </p>
+                                  </div>
+                               </div>
+                               <button 
+                                 onClick={() => { setQuestions(item.questions); setView('ready'); }}
+                                 className="btn w-full mt-8 bg-primary text-white border-primary shadow-lg shadow-primary/10 group-hover:shadow-primary/20"
+                               >
+                                  Launch Practice
+                               </button>
+                            </div>
+                          ))}
+                       </div>
+                    </div>
+                 )}
+
+                 <div className="col-span-full mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-text-muted">
+                   <Library className="w-4 h-4" /> Local Device Scans
+                 </div>
+
                  {history.length > 0 ? history.map((item) => (
                    <motion.div 
                      layout
@@ -1001,6 +1145,46 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Manual Import Modal */}
+      <AnimatePresence>
+        {isImportModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-surface border border-border w-full max-w-2xl rounded-[32px] overflow-hidden flex flex-col h-[80vh]"
+            >
+              <div className="p-6 border-b border-border flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold uppercase tracking-tight">Manual Question Import</h3>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">Bypass scanner for custom JSON or Text</p>
+                </div>
+                <button onClick={() => setIsImportModalOpen(false)} className="btn p-2 rounded-full"><Trash2 className="w-4 h-4" /></button>
+              </div>
+              <div className="flex-1 p-6 space-y-4">
+                <p className="text-xs text-text-muted">Paste your questions in JSON format. Use the NEET Scan schema (text, options[], correctAnswer, explanation, etc.)</p>
+                <textarea 
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  className="w-full h-full bg-bg border border-border rounded-2xl p-4 font-mono text-xs focus:ring-2 focus:ring-primary outline-none resize-none"
+                  placeholder='[ { "text": "What is Mitochondria?", "options": ["Powerhouse", "Kitchen", "Storage", "Guard"], "correctAnswer": 0, "explanation": "ATP generation" } ]'
+                />
+              </div>
+              <div className="p-6 border-t border-border flex gap-3">
+                <button onClick={() => setIsImportModalOpen(false)} className="btn flex-1">Cancel</button>
+                <button 
+                  onClick={handleManualImport}
+                  className="btn btn-primary flex-1"
+                >
+                  Import & Validate
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

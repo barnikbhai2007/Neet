@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "Exam": {
+      "title": "Exam Bundle",
+      "description": "A saved exam with metadata and questions",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "subjects": { "type": "array", "items": { "type": "string" } },
+        "questionCount": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "userId": { "type": "string" },
+        "questions": { 
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "text": { "type": "string" },
+              "options": { "type": "array", "items": { "type": "string" } },
+              "correctAnswer": { "type": "number" },
+              "explanation": { "type": "string" },
+              "subject": { "type": "string" },
+              "pageNumber": { "type": "number" },
+              "originalQuestionNumber": { "type": "number" },
+              "hasDiagram": { "type": "boolean" }
+            }
+          }
+        }
+      },
+      "required": ["name", "subjects", "questionCount", "createdAt", "questions", "userId"]
+    },
+    "User": {
+      "title": "User Profile",
+      "description": "Basic user identity and stats",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "lastLogin": { "type": "number" }
+      },
+      "required": ["email", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/users/{userId}/exams/{examId}": {
+      "schema": "Exam",
+      "description": "Individual exam sets for a user"
+    }
+  }
+}
