@@ -102,9 +102,15 @@ export default function App() {
         const cloud = await getCloudExams(res.user.uid);
         setCloudHistory(cloud);
       }
-    } catch (e) {
-      console.error(e);
-      setError("Login failed.");
+    } catch (e: any) {
+      console.error("Login Error:", e);
+      let msg = e.message || "Login failed.";
+      if (e.code === 'auth/unauthorized-domain') {
+        msg = `Domain Blocked: Add "${window.location.hostname}" to Firebase -> Auth -> Authorized Domains.`;
+      } else if (e.code === 'auth/operation-not-allowed') {
+        msg = "Google Login is not enabled. Go to Firebase Console -> Auth -> Sign-in Method and enable Google.";
+      }
+      setError(`${msg} (Code: ${e.code || 'unknown'})`);
     }
   };
 

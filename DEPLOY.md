@@ -16,3 +16,11 @@
 - The exam interface includes a retractable sidebar (`Question Map`) for smaller screens.
 - All interactive components (buttons, tabs, matching tables) are optimized for touch interactions (min-height 44px).
 - Local storage is handled via **IndexedDB** for reliability on mobile browsers.
+
+## Firebase Authentication (Google Login)
+If you see an "unauthorized domain" error during login on Vercel:
+1. Go to the [Firebase Console](https://console.firebase.google.com/).
+2. Select your project.
+3. Go to **Authentication** > **Settings** > **Authorized Domains**.
+4. Add `neet-pearl.vercel.app` to the list.
+5. Save changes.
