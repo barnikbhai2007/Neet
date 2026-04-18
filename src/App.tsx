@@ -130,7 +130,7 @@ export default function App() {
       const extractedQuestions = await processPDF(file, selectedSubjects);
       clearInterval(progressInterval);
       if (extractedQuestions.length === 0) {
-        throw new Error('No questions found. Try selecting "Botany" or "Zoology" instead of "Biology", or ensure the PDF is not encrypted.');
+        throw new Error('No questions extracted. Ensure the PDF contains readable text and that you\'ve selected specific subjects like "Botany" or "Zoology" rather than just "Biology".');
       }
       
       // Play success sound

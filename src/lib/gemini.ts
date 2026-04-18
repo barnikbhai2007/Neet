@@ -27,27 +27,24 @@ export async function processPDF(file: File, subjects: string[]): Promise<Questi
   // and improve extraction speed.
   const extractionTasks = subjects.map(async (subject) => {
     const prompt = `
-      Instructions:
-      1. Scan the ENTIRE provided PDF document very carefully. This is a NEET practice paper.
-      2. Extract EVERY SINGLE MCQ (Multiple Choice Question) related to the subject: "${subject}".
-      3. Important: Some subjects might be grouped under broader headings like "Biology" (covering Botany/Zoology) or "Science". Search for these too.
-      4. The output MUST be in English only. If the original text is bilingual, translate only the question and options to English.
+      Objective: You are a professional medical entrance exam (NEET) digitizer.
+      Task: Scan the PROVIDED PDF and extract EVERY Multiple Choice Question (MCQ) for the subject: "${subject}".
       
-      5. FORMATTING & STRUCTURE:
-         - Support Assertion-Reason questions with bold labels.
-         - Support List Matching questions with Markdown tables.
-         - Ensure clean line breaks (\\n) for mathematical equations.
+      CRITICAL INSTRUCTIONS:
+      1. SUBJECT MAPPING: Look for "${subject}" sections. Also scan "Biology" for Botany/Zoology. NEET papers often split Biology into these two.
+      2. QUESTION IDENTIFICATION: Questions are typically numbered (1, 2, 3...) or have labels like Q1, Q2. Find ALL of them.
+      3. COMPLEX PATTERNS:
+         - Statement Questions: If a question says "Statement I: ... Statement II: ...", include BOTH statements in the 'text' field using clear line breaks.
+         - Assertion-Reason: If it says "Assertion (A): ... Reason (R): ...", label them clearly in the 'text' field.
+         - List Matching: If it involves List I and List II, represent the lists as a Markdown table in the 'text' field.
+      4. OPTIONS: Extract exactly 4 options. They are usually (1), (2), (3), (4) or (A), (B), (C), (D).
+      5. CORRECT ANSWER: Identify the correct option index (0 to 3). Use your medical/subject expertise if the answer key isn't explicitly clear.
+      6. EXPLANATION: Provide a concise, high-quality technical explanation for the correct answer based on NEET-level concepts.
+      7. DIAGRAMS: If the question refers to a diagram or figure, set 'hasDiagram' to true.
+      8. LANGUAGE: ALL output must be in ENGLISH. Translate if necessary.
       
-      6. IMAGE & DIAGRAM DETECTION: 
-         - If a question refers to a diagram, graph, or circuit, set 'hasDiagram' to true.
-         - Add a reference in the text: "(See figure/image in question [N] on page [P])".
-      
-      7. EXHAUSTIVE EXTRACTION GOAL:
-         - For this specific subject (${subject}), I expect approximately 45-50 questions. 
-         - DO NOT STOP until you have scanned the last page.
-         - If no questions are found for this specific subject string, look for section headers that might contain it (e.g., "Part A: Botany").
-      
-      8. JSON OUTPUT: Return a JSON array of question objects.
+      VOLUME EXPECTATION: NEET subjects typically have 45-50 questions each. Scan the WHOLE document.
+      OUTPUT: Return a JSON array of objects.
     `;
 
     try {
@@ -55,6 +52,7 @@ export async function processPDF(file: File, subjects: string[]): Promise<Questi
         model: "gemini-3-flash-preview",
         contents: [
           {
+            role: "user",
             parts: [
               { text: prompt },
               {
@@ -68,9 +66,9 @@ export async function processPDF(file: File, subjects: string[]): Promise<Questi
         ],
         config: {
           responseMimeType: "application/json",
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW,
-          },
+          temperature: 0.1,
+          topP: 0.95,
+          // Removed ThinkingLevel.LOW to allow default (HIGH) reasoning for complex extraction
           safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
