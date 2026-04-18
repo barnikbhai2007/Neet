@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', 'Segoe UI', Tahoma, Helvetica, sans-serif;
+  --color-primary: #3b82f6;
+  --color-bg: #0f172a;
+  --color-surface: #1e293b;
+  --color-border: #334155;
+  --color-text-main: #f8fafc;
+  --color-text-muted: #94a3b8;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+}
+
+@layer base {
+  body {
+    @apply bg-bg text-text-main font-sans selection:bg-primary/30;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-5 py-2 rounded-lg font-semibold text-sm transition-all duration-200 border border-border bg-surface text-text-main hover:bg-border active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+  .btn-primary {
+    @apply bg-primary text-white border-primary hover:bg-blue-600 hover:border-blue-600 shadow-lg shadow-blue-500/20;
+  }
+  .btn-outline-red {
+    @apply text-red-400 border-red-400/30 bg-red-400/5 hover:bg-red-400/10 hover:border-red-400;
+  }
+  .tab {
+    @apply px-5 py-1.5 rounded-full bg-surface text-text-muted text-sm font-semibold border border-border transition-all hover:border-primary/50 cursor-pointer;
+  }
+  .tab-active {
+    @apply bg-primary text-white border-primary shadow-md shadow-primary/20;
+  }
+  .card-minimal {
+    @apply bg-surface border border-border rounded-2xl shadow-xl shadow-black/20;
+  }
+
+  /* Markdown Table Styles - Forced Borders with Primary Glow */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 1.5rem !important;
+    margin-bottom: 1.5rem !important;
+    border: 2px solid rgba(59, 130, 246, 0.4) !important;
+  }
+  th, td {
+    border: 1px solid rgba(59, 130, 246, 0.2) !important;
+    padding: 0.75rem !important;
+    font-size: 0.875rem !important;
+  }
+  th {
+    background-color: rgba(59, 130, 246, 0.1) !important;
+    font-weight: 900 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    font-size: 10px !important;
+    color: var(--color-primary) !important;
+  }
+  tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
