@@ -50,6 +50,7 @@ export default function App() {
   const [view, setView] = useState<ViewState>('landing');
   const [history, setHistory] = useState<SavedExam[]>([]);
   const [cloudHistory, setCloudHistory] = useState<RemoteExam[]>([]);
+  const [isCloudLoading, setIsCloudLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importText, setImportText] = useState('');
@@ -80,9 +81,16 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        await syncUserToFirestore(u);
-        const cloud = await getCloudExams(u.uid);
-        setCloudHistory(cloud);
+        setIsCloudLoading(true);
+        try {
+          await syncUserToFirestore(u);
+          const cloud = await getCloudExams(u.uid);
+          setCloudHistory(cloud);
+        } catch (e) {
+          console.error("Auth state cloud fetch failure:", e);
+        } finally {
+          setIsCloudLoading(false);
+        }
       }
     });
 
@@ -94,6 +102,46 @@ export default function App() {
     loadData();
     return () => unsubscribe();
   }, []);
+
+  const refreshCloud = async () => {
+    if (!user) return;
+    setIsCloudLoading(true);
+    try {
+      const cloud = await getCloudExams(user.uid);
+      setCloudHistory(cloud);
+    } catch (e: any) {
+      setError(`Refresh failed: ${e.message}`);
+    } finally {
+      setIsCloudLoading(false);
+    }
+  };
+
+  const syncAllLocalToCloud = async () => {
+    if (!user) {
+      login();
+      return;
+    }
+
+    if (history.length === 0) return;
+
+    setIsCloudLoading(true);
+    try {
+      for (const item of history) {
+        const qData = await getExamQuestions(item.id);
+        if (qData) {
+          await saveExamToCloud(user.uid, item.name, item.subjects, qData);
+        }
+      }
+      const cloud = await getCloudExams(user.uid);
+      setCloudHistory(cloud);
+      setError(null);
+    } catch (e: any) {
+      console.error("Bulk sync failed:", e);
+      setError(`Bulk sync failed: ${e.message}`);
+    } finally {
+      setIsCloudLoading(false);
+    }
+  };
 
   const login = async () => {
     try {
@@ -227,9 +275,14 @@ export default function App() {
       
       // Save to cloud if logged in
       if (user) {
-        await saveExamToCloud(user.uid, examName, selectedSubjects, extractedQuestions);
-        const cloud = await getCloudExams(user.uid);
-        setCloudHistory(cloud);
+        try {
+          await saveExamToCloud(user.uid, examName, selectedSubjects, extractedQuestions);
+          const cloud = await getCloudExams(user.uid);
+          setCloudHistory(cloud);
+        } catch (e: any) {
+          console.error("Cloud save failed:", e);
+          setError(`Cloud sync failed: ${e.message}. Paper saved locally only.`);
+        }
       }
 
       const updatedHistory = await getExamHistory();
@@ -362,6 +415,30 @@ export default function App() {
     await deleteExam(id);
     const updated = await getExamHistory();
     setHistory(updated);
+  };
+
+  const syncLocalToCloud = async (e: React.MouseEvent, item: SavedExam) => {
+    e.stopPropagation();
+    if (!user) {
+      setError("Please login to sync your scans to the cloud.");
+      return;
+    }
+
+    setIsCloudLoading(true);
+    try {
+      const qData = await getExamQuestions(item.id);
+      if (qData) {
+        await saveExamToCloud(user.uid, item.name, item.subjects, qData);
+        const cloud = await getCloudExams(user.uid);
+        setCloudHistory(cloud);
+        // We could also play a success sound or show a toast
+      }
+    } catch (e: any) {
+      console.error("Manual cloud sync failed:", e);
+      setError(`Sync failed: ${e.message}`);
+    } finally {
+      setIsCloudLoading(false);
+    }
   };
 
   return (
@@ -562,14 +639,32 @@ export default function App() {
 
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                  {/* Cloud Exams Section */}
-                 {cloudHistory.length > 0 && (
+                 {(cloudHistory.length > 0 || isCloudLoading) && (
                     <div className="col-span-full space-y-4 mb-8">
-                       <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary">
-                         <LayoutDashboard className="w-4 h-4" /> Cloud Sync Vault
+                       <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary">
+                           <LayoutDashboard className="w-4 h-4" /> Cloud Sync Vault
+                         </div>
+                         <button 
+                           onClick={refreshCloud}
+                           disabled={isCloudLoading}
+                           className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                         >
+                           <RefreshCw className={cn("w-3 h-3", isCloudLoading && "animate-spin")} />
+                           {isCloudLoading ? "Syncing..." : "Refresh Cloud"}
+                         </button>
                        </div>
-                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {cloudHistory.map(item => (
-                            <div key={item.id} className="bg-primary/5 border border-primary/20 p-6 rounded-3xl flex flex-col justify-between hover:bg-primary/10 transition-colors group">
+                       
+                       {isCloudLoading && cloudHistory.length === 0 ? (
+                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {[1,2,3].map(i => (
+                              <div key={i} className="bg-surface border border-border p-6 rounded-3xl animate-pulse h-[200px]" />
+                            ))}
+                         </div>
+                       ) : (
+                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {cloudHistory.map(item => (
+                              <div key={item.id} className="bg-primary/5 border border-primary/20 p-6 rounded-3xl flex flex-col justify-between hover:bg-primary/10 transition-colors group">
                                <div className="space-y-4">
                                   <div className="flex items-start justify-between">
                                      <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center text-primary">
@@ -598,11 +693,24 @@ export default function App() {
                             </div>
                           ))}
                        </div>
-                    </div>
-                 )}
+                    )}
+                   </div>
+                )}
 
-                 <div className="col-span-full mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-text-muted">
-                   <Library className="w-4 h-4" /> Local Device Scans
+                 <div className="col-span-full mb-2 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-text-muted">
+                      <Library className="w-4 h-4" /> Local Device Scans
+                    </div>
+                    {history.length > 0 && (
+                      <button 
+                        onClick={syncAllLocalToCloud}
+                        disabled={isCloudLoading}
+                        className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary hover:underline transition-all disabled:opacity-50"
+                      >
+                        <RefreshCw className={cn("w-3 h-3", isCloudLoading && "animate-spin")} />
+                        {user ? "Backup All to Cloud" : "Login to Sync All"}
+                      </button>
+                    )}
                  </div>
 
                  {history.length > 0 ? history.map((item) => (
@@ -616,12 +724,25 @@ export default function App() {
                            <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
                              <Layers className="w-6 h-6" />
                            </div>
-                           <button 
-                             onClick={(e) => removeExam(e, item.id)}
-                             className="p-2 text-text-muted hover:text-red-500 transition-colors"
-                           >
-                             <Trash2 className="w-4 h-4" />
-                           </button>
+                           <div className="flex items-center gap-1">
+                              <button 
+                                onClick={(e) => user ? syncLocalToCloud(e, item) : login()}
+                                disabled={isCloudLoading}
+                                className={cn(
+                                  "p-2 transition-colors disabled:opacity-50",
+                                  user ? "text-text-muted hover:text-primary" : "text-primary hover:bg-primary/10 rounded-lg"
+                                )}
+                                title={user ? "Push to Cloud" : "Login to Sync"}
+                              >
+                                <FileUp className={cn("w-4 h-4", isCloudLoading && "animate-pulse")} />
+                              </button>
+                              <button 
+                                onClick={(e) => removeExam(e, item.id)}
+                                className="p-2 text-text-muted hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                           </div>
                         </div>
                         <div>
                            <h4 className="font-bold text-lg line-clamp-1">{item.name}</h4>

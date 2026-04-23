@@ -39,6 +39,11 @@ export function handleFirestoreError(error: any, operationType: string, path: st
     console.error("Firestore Permission Denied:", errorInfo);
     throw new Error(JSON.stringify(errorInfo));
   }
+  
+  if (error && error.code === 'unavailable') {
+    throw new Error("Could not reach the database. Please check your internet connection.");
+  }
+
   throw error;
 }
 
